@@ -12,7 +12,6 @@ import ssdp_sender
 MCAST_GROUPS = ['239.255.255.250', 'FF02::C', 'FF05::C', 'FF08::C', 'FF0E::C']
 MCAST_PORTS  = [1900]
 
-
 def create_socket(addrinfo):
     s = socket.socket(addrinfo[0], addrinfo[1])
     try:
@@ -43,33 +42,38 @@ def create_socket(addrinfo):
 
     return s
 
-def open_listeners():
-    sockets = []
-    for group in MCAST_GROUPS:
-        for port in MCAST_PORTS:
-            addrinfos = socket.getaddrinfo(group, port, 0, socket.SOCK_DGRAM)
-            for addrinfo in addrinfos:
-                print addrinfo
-                try:
-                    sockets.append(create_socket(addrinfo))
-                except Exception,e:
-                    print e
-    return sockets
+class SsdpListen():
+    def __init__(self, sender):
+        self.sockets = []
+        self.sender  = sender
+
+    def open(self):
+        self.sockets = []
+        for group in MCAST_GROUPS:
+            for port in MCAST_PORTS:
+                addrinfos = socket.getaddrinfo(group, port, 0, socket.SOCK_DGRAM)
+                for addrinfo in addrinfos:
+                    try:
+                        self.sockets.append(create_socket(addrinfo))
+                    except Exception,e:
+                        print e
+    def run(self):
+        while len(self.sockets):
+            sread, swrite, serror = select.select(self.sockets, [], self.sockets, 0)
+            for s in sread:
+                name = s.getsockname()
+                data, src = s.recvfrom(4096)
+                self.sender.send(data, s.family, src, s.getsockname())
+                return
+
+            for s in serror:
+                self.sockets.remove(s)
 
 def main():
-    sockets = open_listeners()
     sender  = ssdp_sender.SsdpSender()
-
-    while len(sockets):
-        sread, swrite, serror = select.select(sockets, [], sockets, 0)
-        for s in sread:
-            name = s.getsockname()
-            data, src = s.recvfrom(4096)
-            sender.send(data, s.family, src, s.getsockname())
-
-        for s in serror:
-            sockets.remove(s)
-
+    listen  = SsdpListen(sender)
+    listen.open()
+    listen.run()
 
 
 if __name__ == '__main__':
