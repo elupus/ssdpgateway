@@ -53,13 +53,20 @@ class SsdpSender():
         else:
             raise "Socket family not implemented"
 
-
-def main():
+def test():
     sender = SsdpSender()
     sender.send('', socket.AF_INET, ('192.168.4.1', 9999), ('239.255.255.250', 1900))
+    sender.send2('', socket.AF_INET, ('192.168.4.1', 9999), ('239.255.255.250', 1900))
     return
 
-if __name__ == '__main__':
-    main()
+def server():
+    class SsdpSenderService(rpyc.Service):
+        from ssdp_sender import SsdpSender as exposed_SsdpSender
 
+    from rpyc.utils.server import ThreadedServer
+    t = ThreadedServer(SsdpSenderService, port = 18861, protocol_config = {"allow_public_attrs" : True})
+    t.start()
+
+if __name__ == '__main__':
+    server()
 

@@ -69,14 +69,23 @@ class SsdpListen():
             for s in serror:
                 self.sockets.remove(s)
 
-def main():
+
+
+def test():
     sender  = ssdp_sender.SsdpSender()
     listen  = SsdpListen(sender)
     listen.open()
     listen.run()
 
+def client():
+    import rpyc
+    c = rpyc.connect("localhost", 18861)
+    sender = c.root.SsdpSender()
+    listen = SsdpListen(sender)
+    listen.open()
+    listen.run()
 
 if __name__ == '__main__':
-    main()
+    client()
 
 
