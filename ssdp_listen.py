@@ -28,6 +28,7 @@ def create_socket(addrinfo):
             mreq = group_bin + struct.pack('=I', socket.INADDR_ANY)
             print mreq
             s.setsockopt(socket.IPPROTO_IP, socket.IP_ADD_MEMBERSHIP, mreq)
+            s.setsockopt(socket.IPPROTO_IP, socket.IP_MULTICAST_LOOP, 0)
         elif addrinfo[0] == socket.AF_INET6:
             print 'IPV6'
             mreq = group_bin + struct.pack('@I', 0)
@@ -64,7 +65,6 @@ class SsdpListen():
                 name = s.getsockname()
                 data, src = s.recvfrom(4096)
                 self.sender.send(data, s.family, src, s.getsockname())
-                return
 
             for s in serror:
                 self.sockets.remove(s)
