@@ -4,38 +4,13 @@ import socket
 import sys
 import struct
 import select
+import ip
+import udp
+import rpyc
 
-def make_ipv4_header(srcip, dstip, datal):
-    srcip = socket.inet_aton(srcip)
-    dstip = socket.inet_aton(dstip)
-
-    ver        = 4               #Version 4 for IPv4
-    ihl        = 5               #Header length in 32 bit words. 5 words == 20 bytes
-    dscp_ecn   = 0               #Optional fields, don't feel like implementing. Let's keep it at 0
-    tlen       = datal + 20      #Length of data + 20 bytes for ipv4 header
-    ident      = socket.htons(0) #ID of packet
-    flg_frgoff = 0               #Flags and fragment offset
-    ttl        = 1               #Time to live
-    ptcl       = 17              #Protocol, 17 (UDP)
-    chksm      = 0               #Will automatically fill in checksum    
-
-    tlen       = socket.htons(tlen)
-    flg_frgoff = socket.htons(flg_frgoff)
-
-    return struct.pack(
-        "!"     #Network(Big endian)
-        "2B"    #Version and IHL, DSCP and ECN
-        "3H"    #Total Length, Identification, Flags and Fragment Offset
-        "2B"    #Time to live, Protocol
-        "H"     #Checksum
-        "4s"    #Source ip
-        "4s"    #Destination ip
-        , (ver << 4) + ihl, dscp_ecn, tlen, ident, flg_frgoff, ttl, ptcl, chksm, srcip, dstip)
-
-def make_udp_header(srcprt, dstprt, datal):
-    return struct.pack(
-        "!4H"   #Source port, Destination port, Length, Checksum
-        , srcprt, dstprt, datal+8, 0)
+def repack(data, fmt, offset):
+    val  = struct.unpack_from("!" + fmt, data, offset)
+    struct.pack_into("" + fmt, data, offset, val[0])
 
 class SsdpSender():
     def __init__(self):
@@ -44,6 +19,7 @@ class SsdpSender():
                                        socket.SOCK_RAW,
                                        socket.IPPROTO_IP)
         self.socket_v4.setsockopt(socket.IPPROTO_IP, socket.IP_HDRINCL, 1)
+        self.socket_v4.setsockopt(socket.IPPROTO_IP, socket.IP_MULTICAST_LOOP, 0)
 
         #self.socket_v6 = socket.socket(socket.AF_INET6,
         #                               socket.SOCK_RAW,
@@ -51,10 +27,25 @@ class SsdpSender():
         #self.socket_v6.setsockopt(socket.IPPROTO_IP, socket.IP_HDRINCL, 1)
 
     def send(self, data, family, src, dst):
-        uh = make_udp_header (src[1], dst[1], len(data))
-        ph = make_ipv4_header(src[0], dst[0], len(data)+len(uh))
-        packet = ph+uh+data
-        print ':'.join('{:02x}'.format(ord(c)) for c in packet)
+        packet_udp       = udp.Packet()
+        packet_udp.sport = src[1]
+        packet_udp.dport = dst[1]
+        packet_udp.data  = data
+
+        packet_ip        = ip.Packet()
+        packet_ip.src    = src[0]
+        packet_ip.dst    = dst[0]
+        packet_ip.ttl    = 1
+        packet_ip.p      = 17
+        packet_ip.data   = udp.assemble(packet_udp, 0)
+
+        packet = bytearray(ip.assemble(packet_ip))
+
+        #Restore byte order for OSX
+        repack(packet, "H", 2)
+        repack(packet, "H", 6)
+
+        print ':'.join('{:02x}'.format(c) for c in packet)
         if   family == socket.AF_INET:
             self.socket_v4.sendto(packet, dst)
         #elif family == socket.AF_INET6:
